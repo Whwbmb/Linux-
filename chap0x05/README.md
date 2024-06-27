@@ -1,309 +1,435 @@
-# 第三章：基于容器技术的渗透测试靶场环境构建
-## 实验一
-#### 步骤一：启动MySQL
-```
-# 1. 创建⽹络
-docker network create todo-app
-```
-![](./img_5/exp1/network.png)
-```
-# 2. 启动 MySQL 容器并将其附加到⽹络。同时定义⼀些环境变量，数据库将使⽤
-这些变量来初始化数据库。
-# 命令中命名 todo-mysql-data 的卷，该卷挂载在 /var/lib/mysql ，这是
-MySQL 存储其数据的位置。但是，我们从未运⾏过命令 docker volume create 。
-Docker 会识别出要使⽤的命名卷，并⾃动创建⼀个。
-docker run -d \
---network todo-app --network-alias mysql \
--v todo-mysql-data:/var/lib/mysql \
--e MYSQL_ROOT_PASSWORD=secret \
--e MYSQL_DATABASE=todos \
-mysql:8.0
-```
-![](./img_5/exp1/运行network.png)
-```
-# 3. 若要确认数据库已启动并正在运⾏，请连接到数据库并验证它是否已连接。
-# 当密码提示出现时，键⼊ secret 。在 MySQL shell 中，列出数据库并验证
-是否看到该 todos 数据库。
-docker exec -it <mysql-container-id> mysql -u root -p
-mysql> SHOW DATABASES;
-# 应该会看到如下所示的输出：
-# +--------------------+
-# | Database |
-# +--------------------+
-# | information_schema |
-# | mysql |
-# | performance_schema |
-# | sys |
-# | todos |
-# +--------------------+
-# 5 rows in set (0.00 sec)
-# 4. 退出 MySQL shell 以返回到计算机上的 shell。
-mysql> exit
-# 我们拥有了⼀个 todos 数据库，可供使⽤。
-```
-![](./img_5/exp1/检验运行.png)
-#### 步骤二：连接 MySQL
-```
-# 1. 使⽤ nicolaka/netshoot 镜像启动⼀个新容器。确保将其连接到同⼀⽹
-络。
-docker run -it --network todo-app nicolaka/netshoot
-```
-`安装`netshoot``
-![](./img_5/exp1/安装netshoot.png)
-```
-# 2. 在容器中，使⽤ dig 命令，这是⼀个有⽤的 DNS ⼯具。将查找主机名为
-mysql 的 IP 地址。
-dig mysql
-# ; <<>> DiG 9.18.8 <<>> mysql
-# ;; global options: +cmd
-# ;; Got answer:
-# ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 32162
-# ;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0,
-ADDITIONAL: 0
-# ;; QUESTION SECTION:
-# ;mysql. IN A
-# ;; ANSWER SECTION:
-# mysql. 600 IN A 172.23.0.2
-# ;; Query time: 0 msec
-# ;; SERVER: 127.0.0.11#53(127.0.0.11)
-# ;; WHEN: Tue Oct 01 23:47:24 UTC 2019
-# ;; MSG SIZE rcvd: 44
-```
-`查看解析IP`
-![](./img_5/exp1/IP.png)
-#### 步骤三：使 TODO 应用程序使用 MYSQL
-```
-# 1. 指定前⾯的每个环境变量，并将容器连接到应⽤⽹络。请确保在运⾏此命令时
-位于⽬录中 getting-started-app。
-docker run -dp 127.0.0.1:3000:3000 \
--w /app -v "$(pwd):/app" \
---network todo-app \
--e MYSQL_HOST=mysql \
--e MYSQL_USER=root \
--e MYSQL_PASSWORD=secret \
--e MYSQL_DB=todos \
-node:18-alpine \
-sh -c "yarn install && yarn run dev"
-```
-![](./img_5/exp1/连接容器到指定网络.png)
+# 第五章：Web服务器（实验）
+## 环境配置：
+### 1. Nginx配置：
+**下载安装Nginx**
 
-```
-# 2. 查看容器⽇志，应该会看到类似于以下内容的消息，这表明它正在使⽤
-mysql 数据库。
-docker logs -f <container-id>
-# nodemon src/index.js
-# [nodemon] 2.0.20
-# [nodemon] to restart at any time, enter `rs`
-# [nodemon] watching dir(s): *.*
-# [nodemon] starting `node src/index.js`
-# Connected to mysql db at host mysql
-# Listening on port 3000
-```
-![](./img_5/exp1/查看日志.png)
+使用apt直接下载安装Nginx，若已经安装则会显示已存在
 
+```bash
+sudo apt install nginx
 ```
-# 3. 在浏览器中打开应⽤程序，然后将⼀些项⽬添加到待办事项列表中。
-```
-![](./img_5/exp1/浏览器添加.png)
-```
-# 4. 连接到 mysql 数据库并证明项⽬正在写⼊数据库。密码是 secret.
-docker exec -it <mysql-container-id> mysql -p todos
-```
-* 首先查看容器ID号
-![](./img_5/exp1/容器和ID.png)
-* 根据ID号进行操作进入数据库
-![](./img_5/exp1/再次登录mysql.png)
-```
-# 5. 在 mysql shell 中，运⾏以下命令：
-mysql> select * from todo_items;
-```
-![](./img_5/exp1/查询浏览器新建项目.png)
-## 实验二
-#### 步骤一：创建 Compose 文件
-```
-在目录中 getting-started-app ，创建名为 compose.yaml 的文件。
 
-├── getting-started-app/
-│ ├── Dockerfile
-│ ├── compose.yaml
-│ ├── node_modules/
-│ ├── package.json
-│ ├── spec/
-│ ├── src/
-│ └── yarn.lock
+![](./img/Nginx/下载安装nginx1.png)
 
-```
-![](./img_5/exp2/创建yaml文件.png)
+**检验Nginx是否正常运行**
 
-#### 步骤二：使用 Docker Compose 定义应用服务
-```
-1. 在文本或代码编辑器中打开 compose.yaml，首先定义要作为应用程序的一
-部分运行的第一个服务（或容器）的名称和镜像。该名称将自动成为网络
-别名，这在定义MySQL服务时非常有用。
-services:
-  app:
-    image: node:18-alpine
+直接在浏览器中输入Ubuntu主机的ip地址，若出现Nginx默认页面则表示Nginx配置成功
 
-```
-```
-2. 添加 command 到你的 compose.yaml 文件中。
-services:
-  app:
-    image: node:18-alpine
-    command: sh -c "yarn install && yarn run dev"
-```
-```
-3. 通过 ports 定义转发的端口。
-services:
-  app:
-    image: node:18-alpine
-    command: sh -c "yarn install && yarn run dev"
-    ports:
-      - 127.0.0.1:3000:3000
-```
-```
-4. 接下来，使用 working_dir 定义工作目录（-w /app），使用 volumes 定义
-卷映射（-v "$(pwd):/app"）。Docker Compose 卷定义的一个优点是可以
-使用当前目录中的相对路径。
-services:
-  app:
-    image: node:18-alpine
-    command: sh -c "yarn install && yarn run dev"
-    ports:
-      - 127.0.0.1:3000:3000
-    working_dir: /app
-    volumes:
-      - ./:/app
-```
-```
-5. 最后，我们需要使用 environment 定义环境变量。
-services:
-  app:
-    image: node:18-alpine
-    command: sh -c "yarn install && yarn run dev"
-    ports:
-      - 127.0.0.1:3000:3000
-    working_dir: /app
-    volumes:
-      - ./:/app
-    environment:
-      MYSQL_HOST: mysql
-      MYSQL_USER: root
-      MYSQL_PASSWORD: secret
-      MYSQL_DB: todos
-```
-#### 步骤三：使用 Docker Compose 定义 MySQL 服务
-```
-1. 首先定义新服务并命名它 mysql ，以便它自动获取网络别名。还要指定要
-使用的映像。
-services:
-  app:
-    # The app service definition
-  mysql:
-    image: mysql:8.0
-```
-```
-2. 接下来，定义卷映射。当使用 docker run 运行容器时，Docker 会自动创建
-命名卷。但是，使用 Compose 运行时不会发生这种情况。我们需要在顶级
-volumes 部分定义卷，然后在服务配置中指定挂载点。只需提供卷名，即
-可使用默认选项。
-services:
-  app:
-    # The app service definition
-  mysql:
-    image: mysql:8.0
-    volumes:
-      - todo-mysql-data:/var/lib/mysql
-volumes:
-  todo-mysql-data:
-```
-```
-3. 最后，我们需要指定环境变量。
-services:
-  app:
-    # The app service definition
-  mysql:
-    image: mysql:8.0
-    volumes:
-      - todo-mysql-data:/var/lib/mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: secret 
-      MYSQL_DATABASE: todos
-volumes:
-  todo-mysql-data:
-所以我们最终完整的 compose.yaml 应如下所示：
-services:
-  app:
-    image: node:18-alpine
-    command: sh -c "yarn install && yarn run dev"
-    ports:
-      - 127.0.0.1:3000:3000
-    working_dir: /app
-    volumes:
-      - ./:/app
-    environment:
-      MYSQL_HOST: mysql
-      MYSQL_USER: root
-      MYSQL_PASSWORD: secret
-      MYSQL_DB: todos
-  mysql:
-    image: mysql:8.0
-    volumes:
-      - todo-mysql-data:/var/lib/mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: secret 
-      MYSQL_DATABASE: todos
-volumes:
-  todo-mysql-data:
+![](./img/Nginx/查看nginx能够正常运行.png)
 
-```
-![](./img_5/exp2/yaml文件.png)
-#### 步骤四：运行应用程序堆栈
-```
-# 1. 确保没有容器的其他副本⾸先运⾏。⽤于 docker ps 列出容器并 docker
-rm -f <ids> 删除它们。
-```
-```
-# 2. 使⽤命令 docker compose up 启动应⽤程序堆栈。添加 -d 标志以在后
-台运⾏所有内容。
-docker compose up -d
-# 运⾏上⼀个命令时，应看到如下所示的输出：
-# Creating network "app_default" with the default driver
-# Creating volume "app_todo-mysql-data" with default driver
-# Creating app_app_1 ... done
-# Creating app_mysql_1 ... done
-# 可以注意到 Docker Compose 创建了卷和⽹络。默认情况下，Docker
-Compose 会⾃动为应⽤程序堆栈创建⽹络（这就是未在 Compose ⽂件中定义⽹络的原因）。
-```
-![](./img_5/exp2/启动.png)
+**查看Nginx日志**
 
-```
-# 3. 使⽤命令 docker compose logs -f 查看⽇志。你将看到每个服务的⽇
-志交错到⼀个流中。当你想观察与时间相关的问题时，这⾮常有⽤。该 -f 标志跟随⽇志，因
-此将在⽣成时为您提供实时输出。
-# 如果已运⾏该命令，则会看到如下所示的输出：
-# mysql_1 | 2019-10-03T03:07:16.083639Z 0 [Note] mysqld:
-ready for connections.
-# mysql_1 | Version: '8.0.31' socket:
-'/var/run/mysqld/mysqld.sock' port: 3306 MySQL Community Server
-(GPL)
-# app_1 | Connected to mysql db at host mysql
-# app_1 | Listening on port 3000
-```
-![](./img_5/exp2/查看所有日志.png)
+在命令行中输入执行下面的命令打开Nginx的日志，查看访问情况
 
+```bash
+tail -F /var/log/nginx/access.log
 ```
-# 4. 服务名称显示在⾏⾸（通常为彩⾊），以帮助区分消息。如果要查看特定服务
-的⽇志，可以在 logs 命令的末尾添加服务名称（例如， docker compose logs -f app
-）。
-```
-![](./img_5/exp2/查看APP日志.png)
 
+![](./img/Nginx/查看nginx能够正常运行-日志.png)
+
+同时刷新浏览器中的Nginx页面，查看日志输出是否更新，出现更新，说明日志和Nginx本身功能正常
+
+![](./img/Nginx/查看nginx能够正常运行-日志2.png)
+
+### 2. VeryNginx配置：
+
+**安装配置VeryNginx**
+
+首先找到VeryNginx的github地址，克隆地址到本地
+
+```bash
+git clone https://github.com/alexazhou/VeryNginx.git
 ```
-# 5. 在浏览器中打开 http://localhost:3000 并看到它正在运⾏。
+
+![](./img/VeryNginx/verynginx拉包.png)
+
+运行文件夹下的py安装文件，下载安装必要的环境文件
+
+```bash
+python3 install.py install
 ```
-![](./img_5/exp2/成功进入浏览器端.png)
-#### 步骤五：关掉 Docker Compose
-当准备好将其全部关掉时，只需运行 docker compose down。容器将停止，网络将
-被删除。
-![](./img_5/exp2/关闭.png)
+
+![](./img/VeryNginx/python安装verynginx.png)
+
+若安装成功，则会有以下输出显示：
+
+![](./img/VeryNginx/python安装verynginx成功.png)
+
+修改Nginx的配置文件，将VeryNginx的端口号和user进行修改，分别修改为`www-data`和`80`，同时，将Nginx的端口修改为`8080`
+
+
+
+Nginx修改如下：
+
+```bash
+sudo vim /etc/nginx/sites-available/default
+```
+
+![](./img/VeryNginx/修改配置3.png)
+
+VeryNginx修改如下：
+
+```bash
+ vim /opt/verynginx/openresty/nginx/conf/nginx.conf
+```
+
+![](./img/VeryNginx/修改配置1.png)
+
+![](./img/VeryNginx/修改配置2.png)
+
+**测试VeryNginx功能**
+
+下面测试VeryNginx的功能,当输入下面命令并执行时，可以启动VeryNginx，在主机IP的80的端口中可以打开查看
+
+```bash
+sudo /opt/verynginx/openresty/nginx/sbin/nginx
+```
+未启动时：
+
+![](./img/VeryNginx/verynginx网页查看.png)
+
+启动后：
+在浏览器中输入http://192.168.56.102/verynginx/index.html ，进入登录界面
+账号和密码默认均为`verynginx`
+
+![](./img/VeryNginx/verynginx网页查看2.png)
+
+通过此页面可以监控访问情况
+
+![](./img/VeryNginx/verynginx网页查看3.png)
+
+当通过手动增加访问量时，监控浏览器页面的变化，若随之出现凸起波峰，则证明监控功能正常
+
+```bash
+curl http://192.168.56.102:8080
+```
+
+![](./img/VeryNginx/verynginx访问验证.png)
+
+### 3. PHP-FPM7.2配置：
+**下载安装PHP-FPM7.2**
+
+通过询问大模型，了解安装7.2版本的fpm方法
+
+![](./img/FPM/安装php-fpm7.2.png)
+
+进行实操：
+首先安装必要工具以获取到固定版本的fpm
+
+![](./img/FPM/安装php-fpm7.2-1.png)
+
+正式开始下载安装fpm
+
+![](./img/FPM/安装php-fpm7.2-2.png)
+
+
+在/var/www/html/目录下新建一个php文件，内容为简单的查看所有信息php脚本：
+
+```bash
+<?php
+phpinfo();
+```
+
+重启nginx后进入浏览器，访问http://192.168.56.102:8080/test.php ，即可看到php的版本信息
+
+![](./img/FPM/安装php-fpm7.2-3.png)
+
+### 4. Wordpress配置：
+
+**下载安装Wordpress**
+
+通过下述命令直接将wordpress4.7版本安装到Ubuntu主机中,并进行解压
+
+```bash
+wget https://wordpress.org/wordpress-4.7.1.tar.gz
+tar -xvzf wordpress-4.7.1.tar.gz
+```
+
+![](./img/Wordpress/安装wordpress1.png)
+
+**配置wordpress**
+将解压的文件目录全部copy到 `/var/www/html/`目录下
+```bash
+sudo cp -r wordpress/* /var/www/html/
+```
+
+![](./img/Wordpress/配置wordpress_copy.png)
+
+为wordpress创建数据库
+
+![](./img/Wordpress/安装wordpress_sql_create.png)
+
+将目录下的配置文件复制后编辑
+
+![](./img/Wordpress/安装wordpress_cp_edit.png)
+
+修改部分如下，其中数据库部分为前面刚刚在MySQL服务器上建立的新数据库的内容
+
+![](./img/Wordpress/安装wordpress_sql_config.png)
+
+该部分内容的配置可以点击链接直接复制网页生成的内容：
+
+![](./img/Wordpress/安装wordpress_link.png)
+
+![](./img/Wordpress/安装wordpress_link_cp.png)
+
+![](./img/Wordpress/安装wordpress_link_cp2.png)
+
+继续配置nginx的default配置文件，使网页能使用静态读取
+
+![](./img/Wordpress/修改配置_静态读取.png)
+
+配置结束后重启nginx和数据库，在浏览器中打开主机IP和端口，会弹出安装界面
+
+![](./img/Wordpress/安装wordpress_install.png)
+
+安装完成后进入主页
+
+![](./img/Wordpress/安装wordpress_login.png)
+
+此时，为让外部访问的地址为 http://wp.sec.cuc.edu.cn 需修改default配置文件中的server_name并重启nginx，同时，还需要在主机(打开浏览器的设备)中修改hosts文件，将`wp.sec.cuc.edu.cn`指向主机(Ubuntu)的IP地址
+
+![](./img/Wordpress/安装wordpress_hosts.png)
+
+最后的效果如图：
+
+![](./img/Wordpress/安装wordpress_final.png)
+
+### 5. dvwa配置：
+**配置dvwa**
+首先将dvwa下载到Ubuntu主机中，然后解压，将解压后的dvwa文件夹复制到`/var/www/`目录下，同时，给www-data用户赋予读写权限
+
+![](./img/Dvwa/dvwa_clone.png)
+
+复制重命名（删掉dist）并修改dvwa的配置文件，将数据库的配置信息修改为MySQL服务器上创建的dvwa数据库的信息
+
+![](./img/Dvwa/dvwa_sql1.png)
+
+![](./img/Dvwa/dvwa_sql2.png)
+
+复制一份nginx的default配置文件到dvwa中，并修改相关配置，其中实现域名替代ip的步骤和wordpress中的一致
+
+![](./img/Dvwa/dvwa_hosts.png)
+
+
+此时，在sites-eabled会同时生成一份dvwa配置文件，将其软链接`ln`到available中的dvwa文件，然后重启nginx，在浏览器中打开dvwa的网址，即可进入dvwa的登录界面
+
+![](./img/Dvwa/dvwa_login.png)
+
+创建数据库并进行登录
+
+![](./img/Dvwa/dvwa_login2.png)
+
+成功进入界面
+
+![](./img/Dvwa/dvwa_login_success.png)
+
+但是当当访问其中的模块时，会发现网页出现了渲染混乱错误，经查看是目录中的文件错误加载，通过询问大模型并对照之前直接复制default的配置文件，发现有许多地方需要修改
+
+![](./img/Dvwa/dvwa_change_config.png)
+
+最终的修改配置如下：
+
+![](./img/Dvwa/dvwa_change_config_final.png)
+
+![](./img/Dvwa/dvwa_change_config_final2.png)
+
+经测试，可正常渲染网页
+
+![](./img/Dvwa/dvwa_page_success.png)
+
+## 环境配置完成，正式开始实验
+## 基础要求：
+### 1. 反向代理配置
+
+通过verynginx添加match，捕获wordpress和dvwa的访问
+
+![](./img/反向代理/get_visit.png)
+
+然后通过配置下图的内容将访问dvwa和wordpress的域名请求转化为127.0.0.1:8080的请求，即wordpress和dvwa的ip访问
+
+![](./img/反向代理/trans_ip.png)
+
+访问效果如下
+
+![](./img/反向代理/trans_result.png)
+
+![](./img/反向代理/trans_result2.png)
+
+## 安全加固要求：
+### 1. 使用IP地址方式均无法访问上述任意站点，并向访客展示自定义的友好错误提示信息页面-1
+
+首先通过询问大模型获取match的匹配条件：
+
+![](./img/ip_forbid/matcher.png)
+
+在matcher中进行配置：
+
+![](./img/ip_forbid/matcher2.png)
+
+进一步配置response，该步骤的作用是当match命中了条件后，经过过滤器可以执行response中的动作内容，因此，自定义的友好化界面也是在这一步中实现
+
+![](./img/ip_forbid/response.png)
+
+继续完善filter
+
+![](./img/ip_forbid/filter.png)
+
+当一切完毕后会发现，verynginx的网页也无法访问，并且会显示自定义的友好化页面
+
+![](./img/ip_forbid/friendly_page.png)
+
+此时为了继续进行实验，这里展示实验中使用到的第一种解决方式：直接在hosts中增加后一个映射ip的域名
+
+![](./img/ip_forbid/vn_hosts.png)
+
+重新使用域名打开发现可以正常使用verynginx的网页
+
+![](./img/ip_forbid/re_visit_vn.png)
+
+此时，继续实验，验证是都之前的效果对上述的任意站点均有效，经测试，发现确实只要满足match的条件均有效，下面是配置了match和response等的前后对比：
+配置前：
+
+![](./img/ip_forbid/compare_pre.png)
+
+配置后
+
+![](./img/ip_forbid/compare_aft.png)
+
+
+### 2. Damn Vulnerable Web Application (DVWA)只允许白名单上的访客来源IP，其他来源的IP访问均向访客展示自定义的友好错误提示信息页面-2
+
+同样的道理，依次配置matcher、response、filter，配置方式如下：
+
+这里的ip随便选了一个VPN的ip作为白名单，如果主机无法访问，则证明有效
+
+![](./img/ip_allowed/matcher.png)
+
+![](./img/ip_allowed/matcher.png)
+
+![](./img/ip_allowed/filter.png)
+
+下面进行效果测试，经测试，发现确实主机ip无法访问，并且出现了友好提示界面
+
+![](./img/ip_allowed/result.png)
+
+### 3. 在不升级Wordpress版本的情况下，通过定制VeryNginx的访问控制策略规则，热修复WordPress < 4.7.1 - Username Enumeration
+
+首先，了解这个漏洞的具体内容，通过打开实验要求中的链接，发现这个漏洞是WordPress < 4.7.1版本中的漏洞，该漏洞是WordPress中一个用户名枚举漏洞，该漏洞通过访问wp-login.php页面，通过输入错误的用户名来获取用户名是否存在，从而实现用户名枚举。
+
+![](./img/修洞/check.png)
+
+进行测试直接将其代码中的地址输入浏览器，确实返回了用户信息：
+
+![](./img/修洞/practice.png)
+
+下面通过依次配置matcher、filter，进行修复，配置方式如下：
+
+![](./img/修洞/matcher.png)
+
+![](./img/修洞/filter.png)
+
+配置完毕后再次进行测试，发现确实无法访问，漏洞被修复
+
+![](./img/修洞/have_fixed_local.png)
+
+![](./img/修洞/have_fixed_wp.png)
+
+### 4. 通过配置VeryNginx的Filter规则实现对Damn Vulnerable Web Application (DVWA)的SQL注入实验在低安全等级条件下进行防护
+
+首先修改难度为low
+
+![](./img/low/dif_to_low.png)
+
+和之前的一样，依次配置matcher、filter，匹配SQL注入所用到的敏感字符配即可：
+
+![](./img/low/matcher.png)
+
+![](./img/low/filter.png)
+
+经测试确实无法再进行注入
+
+### 5. VeryNginx的Web管理页面仅允许白名单上的访客来源IP，其他来源的IP访问均向访客展示自定义的友好错误提示信息页面-3
+
+同之前配置黑白名单的方式一样,只是变成了两个匹配条件，其他的都一样，配置方式如下：
+
+![](./img/whitip/matcher.png)
+
+![](./img/whitip/filter.png)
+
+当配置完filter并保存后会发现，有被封掉了verynginx外面，此时，之前已经演示过了一种方式，这里演示另外一种解决手段————直接修改配置文件
+
+![](./img/whitip/other_way_config_change.png)
+
+进入verynginx的相关目录，找到verynginx.conf文件，修改其中的配置，将白名单对应的过滤器打成false即可（原来为true）
+
+![](./img/whitip/change_to_flase_open.png)
+
+![](./img/whitip/change_to_false.png)
+
+重新加载verynginx
+
+![](./img/whitip/reload.png)
+
+打开网页重新进入发现可以正常访问，而之前filter中的相应配置前也变成了叉号
+
+![](./img/whitip/change_to_false_already.png)
+
+经这么一些操作，也可以验证确实白名单外的ip无法访问verynginx的网页
+### 6.通过定制VeryNginx的访问控制策略规则实现：
+#### 限制DVWA站点的单IP访问速率为每秒请求数 < 50，限制Wordpress站点的单IP访问速率为每秒请求数 < 20，超过访问频率限制的请求直接返回自定义错误提示信息页面-4
+可以先在response中配置返回的HTML错误页面，然后通过frequency limit进行访问次数控制：
+
+![](./img/limit/response.png)
+
+![](./img/limit/limit.png)
+
+当一切完毕后，可以在Ubuntu中使用apcher访问网页进行压力测试，首先，下载安装相关的工具：
+
+![](./img/limit/apcher.png)
+
+安完后输入下面的内容分别进行测试，
+
+![](./img/limit/test_wp.png)
+
+![](./img/limit/test_dvwa.png)
+
+其中可以发现，在对wp进行的测试中，有80个请求失败了，这与之前填写的访问控制规则的内容一致，证明确实实现了访问次数的控制
+
+![](./img/limit/get_20_success.png)
+
+#### 禁止curl访问
+该步骤与之前的方法类似，直接设置matcher和filter即可，但是为了更可视化体现效果，这里多设置了response，配置方式如下：
+
+![](./img/curl/matcher.png)
+
+![](./img/curl/filter.png)
+
+response
+
+![](./img/curl/response.png)
+
+经测试确实无法通过curl访问，下图中最上面的命令之所以能够执行是因为白名单的优先级在curl的上面，会先对白名单进行检测，当然通过页面也可以修改优先级让curl在所有的过滤条件上面
+
+![](./img/curl/forbid_success.png)
+
+## 遇到的问题及解决方法
+
+1. 环境配置问题，在配置dvwa时多次尝试，页面均为forbidden，最后发现是因为nginx的dvwa配置文件中的index变量中`index.php`没有被添加,添加后便可正常访问
+2. dvwa的各个模块页面进入会排版混乱
+3. 通过搜索资料和询问大模型，再加上对各个配置文件挨个排错穷举，最后发现是因为nginx中的dvwa配置文件是直接copy的wordpress的default文件，其中好多内容都不满足要求，通过官方文档和大模型给出的代码替换后得以正常显示。
+4. 在进行安全加固时，不小心将verynginx的网页也设置了访问控制，导致主机无法访问，通过询问大模型，修改了在主机中的hosts文件，将ip访问替换为域名访问，问题解决。
+5. 其他涉及到的小问题和解决手段大多在报告中已经体现。
+
+## 参考链接：
+[chap0x05/第五章：Web服务器（实验）.md](https://github.com/CUCCS/2022-linux-public-excuses0217/blob/main/chap0x05/%E7%AC%AC%E4%BA%94%E7%AB%A0%EF%BC%9AWeb%E6%9C%8D%E5%8A%A1%E5%99%A8%EF%BC%88%E5%AE%9E%E9%AA%8C%EF%BC%89.md)
+
+[智谱清言](https://chatglm.cn/main/alltoolsdetail)
+
+[verynginx](https://github.com/alexazhou/VeryNginx)
+
+[DVWA](https://github.com/digininja/DVWA/blob/master/README.zh.md)
+
+[DVWA的安装与配置教程+文件](https://blog.csdn.net/curious233/article/details/113336530)  
+ 
+[Exploit Database](https://www.exploit-db.com/exploits/41497)
